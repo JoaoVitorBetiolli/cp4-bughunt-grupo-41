@@ -1,0 +1,76 @@
+# Checkpoint 4 — Bug Hunt StreamFIAP
+
+## Identificação
+
+**Grupo:** grupo-41
+
+| Integrante | RM | Turma |
+|---|---|---|
+| João Vitor Betiolli | 561835 | 2CCPY |
+| João Victor Caitano Tabuso | 562525 | 2CCPY |
+| João Pedro Tomas Dominguito | 562166 | 2CCPY |
+| Luiz Gustavo Lima da Silva | 563554 | 2CCPY |
+| Vicente Casellato Rodriguez | 563865 | 2CCPY |
+
+| Campo | |
+|---|---|
+| **Total de bugs corrigidos** | 12 / 12 |
+| **Total de ajustes de Clean Code** | 6 / 6 |
+
+---
+
+## Parte 1 — Bugs encontrados
+
+| # | Sintoma observado (o que fiz/vi) | Causa raiz (arquivo e linha aproximada) | Correção aplicada | Conceito da disciplina |
+|---|---|---|---|---|
+| bug01 | Ao dar GET em /api/conteudos/999, voltava um corpo vazio com status 200, como se tivesse dado certo, quando deveria dar erro 404 | ConteudoController.java, linhas 32-39 (método buscarPorId) — tinha um catch (Exception e) { } vazio que pegava a ConteudoNaoEncontradoException e não fazia nada com ela, só retornava null | Tirei o try/catch inteiro; agora a exceção sobe direto pro GlobalExceptionHandler, que já sabia tratar esse tipo | Propagação de exceções — pegar Exception genérica e não fazer nada com ela esconde o erro de verdade |
+| bug02 | Preço promocional de um Documentário voltava 9.9 em vez de 0.0 | Documentario.java, logo depois da linha 16 (fim do construtor) — a classe não tinha o método calcularPrecoAluguel() sobrescrito, então herdava o valor fixo de Conteudo, que na verdade é o preço do Filme | Adicionei @Override public double calcularPrecoAluguel() { return 0.0; } | Polimorfismo / sobrescrita de método |
+| bug03 | Preço promocional de um Filme com estreia (14.90) voltava 17.88 (aumentou 20%) em vez de 11.92 (desconto de 20%) | Filme.java, linha 25 (método aplicarPromocao) — multiplicava por 1.2 em vez de 0.8 | Troquei preco * 1.2 por preco * 0.8 | Implementação de interface (Promocionavel) — o método não fazia o que a interface prometia |
+| bug04 | Ao cadastrar uma Série, os campos titulo, categoria, duracaoMinutos e classificacaoEtaria voltavam vazios ou zerados; só o numeroTemporadas era salvo certo | Serie.java, linha 14 (construtor) — não chamava o super(...), então os 4 primeiros parâmetros recebidos eram simplesmente descartados | Adicionei a chamada super(titulo, categoria, duracaoMinutos, classificacaoEtaria, true) no começo do construtor | Herança e construtores — a subclasse precisa chamar o construtor da superclasse pra inicializar os atributos herdados |
+| bug05 | Mesmo depois de corrigir o bug04, o preço de uma Série com 5 temporadas continuava vindo 9.90 em vez de 24.50 (4.90 x 5) | Serie.java, linhas 19-20 (método calcularPrecoAluguel(double desconto)) — a assinatura era diferente da superclasse, então isso era uma sobrecarga, não uma sobrescrita. Como não tinha @Override, o compilador não acusou nada, e continuava usando o preço padrão de Conteudo | Tirei o parâmetro desconto e coloquei @Override no método calcularPrecoAluguel() sem parâmetro | Sobrescrita (override) vs. sobrecarga (overload) — o @Override obriga o compilador a checar se a assinatura bate |
+| bug06 | POST /api/usuarios dava erro 500: IdentifierGenerationException | Usuario.java, linha 12 (campo id) — tinha só @Id, sem @GeneratedValue, então o JPA esperava que o id fosse passado manualmente | Adicionei @GeneratedValue(strategy = GenerationType.IDENTITY) em cima do campo id. Também precisei recriar a tabela usuarios no banco (trocando ddl-auto pra create por um instante e voltando pra update), porque a tabela já existia sem a coluna configurada como identity | Mapeamento JPA — estratégias de geração de chave primária |
+| bug07 | Cadastrei um usuário com nome "Ana" e voltava com nome null na consulta | Usuario.java, linha 23 (construtor) — a linha nome = nome; tava atribuindo o parâmetro a ele mesmo, nunca preenchia o atributo this.nome | Troquei nome = nome; por this.nome = nome; | Escopo de variável e uso do this — quando o parâmetro e o atributo têm o mesmo nome, precisa usar this. pra diferenciar |
+| bug08 | Um usuário com 0.0 créditos conseguia alugar um filme de R$ 14,90 e ficava com créditos negativos (-14.9) | Usuario.java, linha 29 (método temCreditosSuficientes) — retornava preco >= this.creditos, lógica ao contrário do que deveria | Troquei pra return this.creditos >= preco; | Cuidado com a direção dos operadores relacionais; achei o bug testando na mão com usuário de 0 créditos vs. de 100 |
+| bug09 | Dava pra alugar um conteúdo com disponivel false numa boa, sem erro nenhum | Usuario.java, linha 37 (começo do método alugar) — o método validava idade e créditos, mas nunca checava c.isDisponivel(); essa regra simplesmente não existia | Adicionei if (!c.isDisponivel()) { throw new ConteudoIndisponivelException(...); } no começo do método | Regra de negócio que faltava no model — só achei lendo o código com calma, não deu erro em runtime que apontasse |
+| bug10 | Um usuário de 12 anos tentando alugar um filme de classificação 14 recebia um erro 500 genérico, sem mensagem nenhuma | GlobalExceptionHandler.java, depois da linha 26 — não tinha nenhum @ExceptionHandler pra ClassificacaoIndicativaException; como é uma exceção checked e ninguém tratava ela, o Spring devolvia o erro padrão dele | Adicionei @ExceptionHandler(ClassificacaoIndicativaException.class), devolvendo status 403 com a mensagem da exceção | Exceção checked vs. unchecked — a mensagem só chega no cliente se tiver alguém tratando aquele tipo específico |
+| bug11 | GET /api/conteudos/categoria/FICCAO voltava lista vazia mesmo tendo filme dessa categoria cadastrado | ConteudoController.java, linha 41 (dentro do método listarPorCategoria) — comparava c.getCategoria() == categoria usando ==, que compara referência de objeto, não o texto em si | Troquei o loop manual pela chamada direta a conteudoRepository.findByCategoria(categoria), que já existia pronto no repository | == vs. .equals() em Java — == compara referência, .equals() compara o conteúdo. Nunca compara String com == |
+| bug12 | Dava pra cadastrar um filme com duracaoMinutos -10 numa boa, sem validação nenhuma | Conteudo.java, linha 24 (construtor) — não tinha nenhuma checagem de duracaoMinutos em lugar nenhum, nem no controller nem no model | Adicionei if (duracaoMinutos <= 0) { throw new IllegalArgumentException(...); } no construtor (protege todas as subclasses de uma vez); adicionei também o handler @ExceptionHandler(IllegalArgumentException.class) no GlobalExceptionHandler, devolvendo 400 | Onde blindar o objeto — validando no construtor, nenhuma instância de Conteudo consegue existir num estado inválido, não importa o caminho que criou ela |
+
+## Parte 2 — Ajustes de Clean Code
+
+| # | Onde estava | Qual princípio/boas práticas era violado | O que eu mudei |
+|---|---|---|---|
+| clean01 | Conteudo.java, linha 16 (campo public int duracaoMinutos) | Encapsulamento — o campo era público mesmo já tendo getDuracaoMinutos()/setDuracaoMinutos() prontos | Deixei o campo private; ajustei o ConteudoController pra usar getDuracaoMinutos() em vez de acessar o campo direto em cadastrarFilme, cadastrarSerie e cadastrarDocumentario |
+| clean02 | Usuario.java, linha 34 (comentário do método debitarCreditos) | Comentário mentiroso — dizia "adiciona o valor aos créditos" mas o código na verdade subtrai | Corrigi o comentário pra "debita o valor dos créditos do usuário" |
+| clean03 | ConteudoController.java, linhas 75-88 (final da classe) | Código morto — o método calcularDescontoAntigo(double) não era chamado em lugar nenhum, e ainda tinha um bloco de código comentado | Removi o método sem uso e o bloco comentado; removi também o import java.util.ArrayList que sobrou sem uso depois de corrigir o bug11 |
+| clean04 | Usuario.java, linhas 58-65 (dentro do método alugar) | Responsabilidade única (SRP) — o model tava imprimindo um "recibo" inteiro com System.out.println, misturando regra de negócio com apresentação | Tirei as 8 linhas de System.out.println; o método alugar() ficou só com a regra de negócio |
+| clean05 | ConteudoController.java, linhas 32-38 (método buscarPorId) | Catch genérico (catch Exception e vazio) que escondia o erro de verdade e impedia o GlobalExceptionHandler de tratar direito | Já resolvido junto com o bug01: quando tirei o try/catch pra corrigir o bug, esse item de Clean Code também sumiu — não teve commit separado porque não sobrou nenhuma mudança de código pra fazer depois |
+| clean06 | Conteudo.java, linhas 41-44 (método calcularPrecoPromocional); Filme.java, linhas 28-31; Serie.java, linhas 30-33 (métodos calcularPrecoPromocional novos) | Uso de instanceof + downcast em Conteudo — um jeito de fazer que não aproveita o polimorfismo que a interface deveria dar | Deixei Conteudo.calcularPrecoPromocional() só com return calcularPrecoAluguel(); agora Filme e Serie sobrescrevem calcularPrecoPromocional() cada um do seu jeito, chamando aplicarPromocao(calcularPrecoAluguel()) |
+
+---
+
+## Parte 3 — Perguntas de reflexão
+
+### 1. Injeção de dependência (Aula 13)
+
+Os controllers (tipo o ConteudoController e o UsuarioController) recebem os repositories via @Autowired, em vez da gente escrever new ConteudoRepository() na mão. Isso acontece porque ConteudoRepository é uma interface — a implementação de verdade dela quem cria é o Spring Data JPA, em tempo de execução (um proxy), então nem existe uma classe concreta pra dar new. Além disso, o Spring cuida do ciclo de vida desses objetos (os beans): ele cria uma instância só e compartilhada, cuida de abrir e fechar conexão com o banco, e injeta essa mesma instância em qualquer classe que precisar dela. Se fôssemos criar o repository na mão, teríamos que reimplementar tudo que o Spring Data já faz sozinho: conexão com o Oracle, controle de transação e mapeamento das colunas — foi o que vimos acontecer com o findByCategoria, que funciona sem a gente escrever nenhuma linha de implementação.
+
+### 2. JDBC vs Spring Data JPA (Aulas 12 e 13)
+
+Na Aula 12, o ProdutoDAO era escrito na mão com Connection, PreparedStatement e ResultSet, e cada operação no banco precisava de SQL escrito por nós. Já o ConteudoRepository do projeto tem só duas linhas (extends JpaRepository) e já vem de graça com save, findAll, findById e deleteById prontos. O Spring Data JPA automatiza a criação do SQL básico e o mapeamento das colunas do banco pros atributos da entidade, usando as anotações @Entity, @Id e @GeneratedValue. Por outro lado, o JDBC/DAO ainda ganha quando precisa de uma query bem específica ou otimizada na mão, coisa que o Spring Data às vezes esconde demais. O findByCategoria funciona sem implementação nenhuma porque o Spring Data JPA entende o nome do método por convenção (findBy + nome do atributo) e monta a query sozinho — foi exatamente isso que usamos pra corrigir o bug11, trocando aquele loop manual com == por essa chamada pronta.
+
+### 3. Exceções checked vs unchecked (Aula 11)
+
+No projeto, a ClassificacaoIndicativaException extends Exception, ou seja, é uma exceção checked. Isso obriga qualquer método que lança ela a declarar throws ClassificacaoIndicativaException na assinatura, que é o que acontece no Usuario.alugar() e no AluguelController. O problema não tava na exceção em si, que já era lançada certinho com uma mensagem clara, mas sim no fato de que o GlobalExceptionHandler não tinha nenhum @ExceptionHandler cadastrado pra ela. Sem esse tratamento, o Spring devolvia o erro padrão dele, sem detalhe nenhum, e a mensagem que já existia acabava se perdendo. A correção foi adicionar @ExceptionHandler(ClassificacaoIndicativaException.class) no GlobalExceptionHandler, mapeando pra uma resposta HTTP 403 com a mensagem original. Isso mostra que, seja a exceção checked ou unchecked, ela só chega de um jeito útil pro cliente da API se tiver alguém — nesse caso o @RestControllerAdvice — pegando e transformando aquele tipo específico numa resposta HTTP legível.
+
+### 4. Sobrescrita vs sobrecarga (Aula 7)
+
+O bug mais difícil de achar do projeto tava na Serie: o método calcularPrecoAluguel(double desconto) parecia que ia sobrescrever o calcularPrecoAluguel() do Conteudo, só que na verdade tinha uma assinatura diferente (um parâmetro a mais), o que criava uma sobrecarga — um método totalmente novo e separado do original. Como nenhum lugar do código chamava esse método com parâmetro, ele nunca era executado; toda vez que alguém pedia o preço de uma série, o sistema usava o método sem parâmetro herdado do Conteudo, que devolvia 9.90 (o valor do Filme). O compilador não acusou nada porque, tecnicamente, os dois métodos existem sem conflito, são só dois métodos diferentes mesmo. Se a gente tivesse colocado @Override em cima do método errado desde o começo, o compilador teria dado erro de compilação avisando que aquele método não sobrescreve nada da superclasse, já que a assinatura não bate — isso teria pego o bug antes mesmo de rodar o projeto.
+
+### 5. Onde blindar o objeto? (Aulas 3, 4 e 13)
+
+A gente achou pelo menos três bugs de dado inválido sendo aceito: duração menor ou igual a zero no cadastro, créditos podendo ficar negativos, e o id do Usuario não sendo gerado. Pra duração, coloquei a validação direto no construtor do Conteudo, porque é o único lugar que toda instância de Filme, Série ou Documentário obrigatoriamente passa — se validasse só no controller, a classe ficaria vulnerável a qualquer outro código que criasse um Conteudo direto. Já nos créditos negativos, o problema não era falta de validação, era uma validação com a lógica invertida no temCreditosSuficientes, mostrando que ter a checagem no lugar certo não adianta nada se a lógica dela tiver errada. Isso mostra que blindar o objeto precisa tanto de escolher o lugar certo (o construtor, pra regras que sempre precisam valer) quanto garantir que a lógica daquela validação tá certa — foi um teste manual (cadastrar usuário com 0 créditos e tentar alugar) que expôs esse segundo problema.
+
+### 6. Abstração e interface (Aulas 8 e 9)
+
+O Conteudo é uma classe abstrata porque representa algo em comum entre Filme, Série e Documentário — todos têm título, categoria e duração — mas nenhum "Conteúdo genérico" deveria existir sozinho, por isso ela nunca é instanciada direto. Já a Promocionavel é uma interface porque representa uma capacidade que só algumas classes têm (a de aplicar promoção), sem depender da hierarquia de herança — é por isso que Filme e Serie implementam essa interface, mas o Documentario não. Se o Documentário passasse a ter promoção, bastaria fazer Documentario implements Promocionavel, implementar o aplicarPromocao nele, e sobrescrever o calcularPrecoPromocional do mesmo jeito que fizemos no Filme e na Serie, chamando aplicarPromocao(calcularPrecoAluguel()). Nenhuma linha do Conteudo, Filme, Serie ou do ConteudoController precisaria mudar — depois do clean06, cada classe já cuida da própria promoção com polimorfismo, sem nenhum instanceof checando tipo no meio do caminho. Isso mostra um design bem desacoplado: adicionar uma capacidade nova numa classe não obriga mexer em código que já funciona em outro lugar.
