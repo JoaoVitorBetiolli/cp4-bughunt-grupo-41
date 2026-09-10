@@ -27,6 +27,11 @@ public class Serie extends Conteudo implements Promocionavel {
         return preco * 0.8;
     }
 
+    @Override
+    public double calcularPrecoPromocional() {
+        return aplicarPromocao(calcularPrecoAluguel());
+    }
+
     public int getNumeroTemporadas() { return numeroTemporadas; }
     public void setNumeroTemporadas(int numeroTemporadas) { this.numeroTemporadas = numeroTemporadas; }
 }

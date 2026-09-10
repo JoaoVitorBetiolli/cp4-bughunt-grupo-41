@@ -38,10 +38,6 @@ public abstract class Conteudo {
     }
 
     public double calcularPrecoPromocional() {
-        if (this instanceof Promocionavel) {
-            Promocionavel promocionavel = (Promocionavel) this;
-            return promocionavel.aplicarPromocao(calcularPrecoAluguel());
-        }
         return calcularPrecoAluguel();
     }
 
